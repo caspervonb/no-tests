@@ -1,16 +1,53 @@
 'use strict';
 
 const createStore = require('redux').createStore;
-const Provider = require('react-redux').provider;
+const Provider = require('react-redux').Provider;
 const React = require('react');
 const render = require('react-dom').render;
 const connect = require('react-redux').connect;
+
+function generateTest() {
+  var delay = 7000 + Math.random() * 7000;
+  var testPassed = Math.random() > 0.5;
+
+  return function(callback) {
+    setTimeout(function() {
+      callback(testPassed);
+    }, delay);
+  };
+}
+
+const tests = [
+  { description: "commas are rotated properly",           run: generateTest() },
+  { description: "exclamation points stand up straight",  run: generateTest() },
+  { description: "run-on sentences don't run forever",    run: generateTest() },
+  { description: "question marks curl down, not up",      run: generateTest() },
+  { description: "semicolons are adequately waterproof",  run: generateTest() },
+  { description: "capital letters can do yoga",           run: generateTest() },
+];
+
+class RunTests extends React.Component {
+  render() {
+    return (
+      <div>
+         <button onClick={e => this.handleClick(e)}>
+           Run
+         </button>
+       </div>
+     )
+   }
+
+   handleClick(e) {
+     this.props.onRunClick();
+   }
+}
 
 class Test extends React.Component {
  render() {
    return (
      <li onClick={this.props.onClick}>
-       {this.props.description}
+      <span className="test-description">{this.props.description}</span>
+      <span className="test-state"> {this.props.state}</span>
      </li>
    );
  }
@@ -21,7 +58,8 @@ class TestList extends React.Component {
     return (
       <ul>
         {this.props.tests.map((test, index) =>
-          <Test {...test} key={index} />
+          <Test {...test} key={index}
+          onClick={() => this.props.onTestClick(index)} />
         )}
       </ul>
     );
@@ -30,55 +68,80 @@ class TestList extends React.Component {
 
 class App extends React.Component {
  render() {
+   const dispatch = this.props.dispatch;
+
    return (
      <div>
-       <TestList tests={tests} />
+      <RunTests onRunClick={
+        () => {
+          this.props.tests.forEach((test, index) => {
+            dispatch(runTest(index));
+
+            test.run(passed => {
+              dispatch(completeTest(index, passed));
+            });
+          });
+        }
+      }/>
+
+      <TestList tests={this.props.tests} onTestClick={ index => {
+        dispatch(runTest(index));
+
+        this.props.tests[index].run(passed => {
+          dispatch(completeTest(index, passed));
+        });
+      }}/>
      </div>
    );
   }
 }
 
-App = connect(function(state) {
-  return {
-    tests: [],
-  };
+let Container = connect(function(state) {
+  return Object.assign({}, {
+    tests: state
+  });
 })(App);
 
-const ADD_TEST = 'ADD_TEST';
-const FAIL_TEST = 'FAIL_TEST';
-const SUCCEED_TEST = 'SUCCEED_TEST';
+const RUN_TEST = 'RUN_TEST';
+const COMPLETE_TEST = 'COMPLETE_TEST';
 
-const TEST_STATE_PENDING = 0;
-
-function addTest(description, fn) {
-  return {type: ADD_TEST, description, fn};
+function runTest(index) {
+  return { type: RUN_TEST, index };
 }
 
-function failTest(description, fn) {
-  return {type: RUN_TEST, description, fn, state: TEST_STATE_PENDING };
+function completeTest(index, passed) {
+  return { type: COMPLETE_TEST, index, passed };
 }
-
-function
 
 let store = createStore(function reduce(state, action) {
   switch (action.type) {
-    case ADD_TEST:
-      return [
-        ...state,
-        {
-          description: action.description,
-        }
-      ];
+    case RUN_TEST:
+      state = state.slice(0);
+      state[action.index] = Object.assign({}, state[action.index], {
+        state: 'running',
+      });
+      return state;
 
-    break;
+    case COMPLETE_TEST:
+      state = state.slice(0);
+      state[action.index] = Object.assign({}, state[action.index], {
+        state: action.passed ? 'passed' : 'failed',
+      });
+
+      return state;
+
+    default:
+      return state;
   }
-
-  return state;
-});
+}, tests.map(test => {
+  return Object.assign({}, test, {
+    state: 'pending'
+  });
+}));
 
 render(
   <Provider store={store}>
-    <App />
+    <Container />
   </Provider>,
   document.getElementById('root')
 )
